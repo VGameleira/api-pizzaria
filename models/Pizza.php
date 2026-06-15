@@ -1,142 +1,157 @@
 <?php
+
+/**
+ * Modelo da entidade Pizza.
+ * 
+ * Encapsula as operações de banco de dados relacionadas a pizzas,
+ * utilizando prepared statements do PDO para proteção contra SQL injection.
+ */
 class Pizza
 {
-    private $conn;
-    private $tabela = "pizzas";
+    private PDO $conn;
+    private string $tabela = 'pizzas';
 
-    public $idPizza;
-    public $nome;
-    public $ingredientes;
-    public $valor;
+    public int    $idPizza;
+    public string $nome;
+    public string $ingredientes;
+    public float  $valor;
 
-    public function __construct($db)
+    public function __construct(PDO $db)
     {
         $this->conn = $db;
     }
 
-    // Retorna todas as pizzas ordenadas por valor
-    function read()
+    /**
+     * Lista todas as pizzas ordenadas por valor.
+     */
+    public function read(): PDOStatement
     {
-        $query = "SELECT idPizza, nome, ingredientes, valor FROM " . $this->tabela . " ORDER BY valor";
+        $query = "SELECT idPizza, nome, ingredientes, valor
+                  FROM {$this->tabela}
+                  ORDER BY valor";
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
         return $stmt;
     }
 
-    // Retorna pizzas com paginação
-    public function read_paginated($page = 1, $limit = 10)
+    /**
+     * Lista pizzas com paginação.
+     */
+    public function readPaginated(int $page = 1, int $limit = 10): PDOStatement
     {
-        // Calcular o offset baseado na página
         $offset = ($page - 1) * $limit;
-        
-        $query = "SELECT idPizza, nome, ingredientes, valor FROM " . $this->tabela . " ORDER BY valor LIMIT :limit OFFSET :offset";
+
+        $query = "SELECT idPizza, nome, ingredientes, valor
+                  FROM {$this->tabela}
+                  ORDER BY valor
+                  LIMIT :limit OFFSET :offset";
+
         $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(':limit', (int)$limit, PDO::PARAM_INT);
-        $stmt->bindParam(':offset', (int)$offset, PDO::PARAM_INT);
+        $stmt->bindValue(':limit',  $limit,  PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
         return $stmt;
     }
 
-    // Retorna o total de pizzas
-    public function count()
+    /**
+     * Retorna o total de registros na tabela.
+     */
+    public function count(): int
     {
-        $query = "SELECT COUNT(*) as total FROM " . $this->tabela;
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute();
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row['total'];
+        $query = "SELECT COUNT(*) as total FROM {$this->tabela}";
+        $stmt = $this->conn->query($query);
+        return (int) $stmt->fetchColumn();
     }
 
-    // Busca uma única pizza pelo ID
-    public function read_single()
+    /**
+     * Busca uma pizza pelo ID e preenche as propriedades da instância.
+     */
+    public function readSingle(): bool
     {
-        $query = 'SELECT
-                    p.idPizza,
-                    p.nome,
-                    p.ingredientes,
-                    p.valor
-                FROM
-                    ' . $this->tabela . ' p
-                WHERE
-                    p.idPizza = ?
-                LIMIT 1';
+        $query = "SELECT idPizza, nome, ingredientes, valor
+                  FROM {$this->tabela}
+                  WHERE idPizza = :id
+                  LIMIT 1";
 
         $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(1, $this->idPizza);
+        $stmt->bindValue(':id', $this->idPizza, PDO::PARAM_INT);
         $stmt->execute();
 
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $row = $stmt->fetch();
 
-        // Verifica se encontrou registro
-        if ($row) {
-            $this->nome = $row['nome'];
-            $this->ingredientes = $row['ingredientes'];
-            $this->valor = $row['valor'];
-            return true;
+        if (!$row) {
+            return false;
         }
-        return false;
+
+        $this->nome         = $row['nome'];
+        $this->ingredientes = $row['ingredientes'];
+        $this->valor        = (float) $row['valor'];
+        return true;
     }
 
-    // Insere nova pizza
-    public function create()
+    /**
+     * Insere uma nova pizza no banco.
+     */
+    public function create(): bool
     {
-        $query = 'INSERT INTO ' . $this->tabela . ' SET nome = :nome, ingredientes = :ingredientes, valor = :valor';
+        $query = "INSERT INTO {$this->tabela} (nome, ingredientes, valor)
+                  VALUES (:nome, :ingredientes, :valor)";
+
         $stmt = $this->conn->prepare($query);
+        $stmt->bindValue(':nome',         $this->sanitizeText($this->nome));
+        $stmt->bindValue(':ingredientes', $this->sanitizeText($this->ingredientes));
+        $stmt->bindValue(':valor',        $this->valor);
 
-        // Limpeza dos dados
-        $this->nome = htmlspecialchars(strip_tags($this->nome));
-        $this->ingredientes = htmlspecialchars(strip_tags($this->ingredientes));
-        $this->valor = htmlspecialchars(strip_tags($this->valor));
-
-        // Vinculação
-        $stmt->bindParam(':nome', $this->nome);
-        $stmt->bindParam(':ingredientes', $this->ingredientes);
-        $stmt->bindParam(':valor', $this->valor);
-
-        if ($stmt->execute()) {
-            return true;
-        }
-        printf("Error: %s.\n", $stmt->error);
-        return false;
+        return $stmt->execute();
     }
 
-    // Atualiza uma pizza existente
-    public function update()
+    /**
+     * Atualiza uma pizza existente.
+     */
+    public function update(): bool
     {
-        $query = 'UPDATE ' . $this->tabela . ' SET nome = :nome, ingredientes = :ingredientes, valor = :valor WHERE idPizza = :idPizza';
+        $query = "UPDATE {$this->tabela}
+                  SET nome = :nome, ingredientes = :ingredientes, valor = :valor
+                  WHERE idPizza = :id";
+
         $stmt = $this->conn->prepare($query);
+        $stmt->bindValue(':nome',         $this->sanitizeText($this->nome));
+        $stmt->bindValue(':ingredientes', $this->sanitizeText($this->ingredientes));
+        $stmt->bindValue(':valor',        $this->valor);
+        $stmt->bindValue(':id',           $this->idPizza, PDO::PARAM_INT);
 
-        $this->nome = htmlspecialchars(strip_tags($this->nome));
-        $this->ingredientes = htmlspecialchars(strip_tags($this->ingredientes));
-        $this->valor = htmlspecialchars(strip_tags($this->valor));
-        $this->idPizza = htmlspecialchars(strip_tags($this->idPizza));
-
-        $stmt->bindParam(':nome', $this->nome);
-        $stmt->bindParam(':ingredientes', $this->ingredientes);
-        $stmt->bindParam(':valor', $this->valor);
-        $stmt->bindParam(':idPizza', $this->idPizza);
-
-        if ($stmt->execute()) {
-            return true;
-        }
-        printf("Error: %s.\n", $stmt->error);
-        return false;
+        return $stmt->execute();
     }
 
-    // Exclui uma pizza
-    public function delete()
+    /**
+     * Exclui uma pizza pelo ID.
+     */
+    public function delete(): bool
     {
-        $query = 'DELETE FROM ' . $this->tabela . ' WHERE idPizza = :idPizza';
+        $query = "DELETE FROM {$this->tabela} WHERE idPizza = :id";
         $stmt = $this->conn->prepare($query);
+        $stmt->bindValue(':id', $this->idPizza, PDO::PARAM_INT);
+        return $stmt->execute();
+    }
 
-        $this->idPizza = htmlspecialchars(strip_tags($this->idPizza));
-        $stmt->bindParam(':idPizza', $this->idPizza);
+    /**
+     * Retorna os dados formatados para resposta JSON.
+     */
+    public function toArray(): array
+    {
+        return [
+            'idPizza'      => $this->idPizza,
+            'nome'         => $this->nome,
+            'ingredientes' => $this->ingredientes,
+            'valor'        => $this->valor,
+        ];
+    }
 
-        if ($stmt->execute()) {
-            return true;
-        }
-        printf("Error: %s.\n", $stmt->error);
-        return false;
+    /**
+     * Sanitiza texto removendo tags HTML e caracteres especiais.
+     */
+    private function sanitizeText(string $value): string
+    {
+        return htmlspecialchars(strip_tags(trim($value)), ENT_QUOTES, 'UTF-8');
     }
 }
-?>
