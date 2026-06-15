@@ -1,0 +1,13 @@
+# .htaccess - Configurações do Apache para Roteamento
+ 
+# Ativa o motor de reescrita de URL
+RewriteEngine On
+ 
+# Condição: Se a requisição não for para um arquivo existente...
+RewriteCond %{REQUEST_FILENAME} !-f
+# Condição: E também não for para um diretório existente...
+RewriteCond %{REQUEST_FILENAME} !-d
+ 
+# Regra: Redireciona a requisição para o index.php
+# O parâmetro [L] impede que outras regras sejam aplicadas
+RewriteRule ^(.*)$ index.php [L]
